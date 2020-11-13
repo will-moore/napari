@@ -16,6 +16,43 @@ from math import ceil
 
 import warnings
 
+
+def stitch_planes(planes, axis=0):
+    """
+    Parameters
+    ----------
+    planes : a list of 2D dask planes
+    Returns
+    -------
+    array : dask.array.Array
+        A Dask Array representing the contents of all image files.
+    """
+    arrayfunc = np.asanyarray
+
+    stitched_shape = list(planes[0].shape)
+    chunk = planes[0].shape
+    stitched_shape[axis] = stitched_shape[axis] * len(planes)
+    stitched_shape = tuple(stitched_shape)
+    # stitched_shape = (shape[axis] * len(planes),) + shape[1:]
+    dtype = planes[0].dtype
+    chunks = da.core.normalize_chunks(chunk, stitched_shape)
+
+    a = da.map_blocks(
+        read_data,
+        chunks=chunks,
+        myplanes = planes,
+        axis=axis,
+        arrayfunc=arrayfunc,
+        meta=arrayfunc([]).astype(dtype),  # meta overwrites `dtype` argument
+    )
+    return a
+
+def read_data(block_info=None, **kwargs):
+    """map_blocks passes in the planes"""
+    i = block_info[None]['chunk-location'][kwargs['axis']]
+    return planes[i] 
+
+
 def stack_planes(planes):
     """
     Parameters
@@ -30,11 +67,7 @@ def stack_planes(planes):
 
     shape = (len(planes),) + planes[0].shape
     dtype = planes[0].dtype
-
-    print('stack_planes', shape, dtype)
-
     chunks = da.core.normalize_chunks((1,) + shape[1:], shape)
-    print('chunks', chunks)
 
     a = da.map_blocks(
         read_data_with_extra_dimension,
@@ -43,8 +76,6 @@ def stack_planes(planes):
         arrayfunc=arrayfunc,
         meta=arrayfunc([]).astype(dtype),  # meta overwrites `dtype` argument
     )
-    print('a', a)
-
     return a
 
 
@@ -134,7 +165,8 @@ for p in range(5):
     tile_name = "1,%s,1,1,1,1,%s,%s" % (p, w, h)
     planes.append(da.from_delayed(lazy_reader(tile_name), shape=(h, w), dtype=np.int16))
 
-output = stack_planes(planes)
+# output = stack_planes(planes)
+output = stitch_planes(planes, 0)
 print('output.shape', output.shape)
 print(output.compute())
 
