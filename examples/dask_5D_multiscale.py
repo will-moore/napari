@@ -14,6 +14,45 @@ import numpy as np
 import napari
 from math import ceil
 
+import warnings
+
+def stack_planes(planes):
+    """
+    Parameters
+    ----------
+    planes : a list of 2D dask planes
+    Returns
+    -------
+    array : dask.array.Array
+        A Dask Array representing the contents of all image files.
+    """
+    arrayfunc = np.asanyarray
+
+    shape = (len(planes),) + planes[0].shape
+    dtype = planes[0].dtype
+
+    print('stack_planes', shape, dtype)
+
+    chunks = da.core.normalize_chunks((1,) + shape[1:], shape)
+    print('chunks', chunks)
+
+    a = da.map_blocks(
+        read_data_with_extra_dimension,
+        chunks=chunks,
+        planes = planes,
+        arrayfunc=arrayfunc,
+        meta=arrayfunc([]).astype(dtype),  # meta overwrites `dtype` argument
+    )
+    print('a', a)
+
+    return a
+
+
+def read_data_with_extra_dimension(block_info=None, **kwargs):
+    """map_blocks passes in the planes"""
+    i, j = block_info[None]['array-location'][0]
+    return np.expand_dims(planes[i], axis=0)
+
 
 def get_tile(tile_name):
     """Return a tile for the given coordinates"""
@@ -88,26 +127,36 @@ def get_pyramid_lazy(shape, tile_shape, levels):
         print(level.shape)
     return pyramid
 
+planes = []
+for p in range(5):
+    w = 256
+    h = 256
+    tile_name = "1,%s,1,1,1,1,%s,%s" % (p, w, h)
+    planes.append(da.from_delayed(lazy_reader(tile_name), shape=(h, w), dtype=np.int16))
 
-shape = (10, 2, 5, 3000, 5000)
-tile_shape = (256, 256)
-levels = 4
-start = datetime.datetime.now()
-pyramid = get_pyramid_lazy(shape, tile_shape, levels)
-lazy_timer = (datetime.datetime.now() - start).total_seconds()
-print('lazy pyramid timer', lazy_timer)
+output = stack_planes(planes)
+print('output.shape', output.shape)
+print(output.compute())
 
-times = []
-for level in range(levels, 0, -1):
-    start = datetime.datetime.now()
-    pyramid[level - 1].compute()
-    timer = (datetime.datetime.now() - start).total_seconds()
-    times.append(timer)
-    print(f'Level {level - 1} compute timer', (datetime.datetime.now() - start).total_seconds())
+# shape = (10, 2, 5, 3000, 5000)
+# tile_shape = (256, 256)
+# levels = 4
+# start = datetime.datetime.now()
+# pyramid = get_pyramid_lazy(shape, tile_shape, levels)
+# lazy_timer = (datetime.datetime.now() - start).total_seconds()
+# print('lazy pyramid timer', lazy_timer)
 
-print('shape', shape, 'tile_shape', tile_shape)
-print('lazy_pyramid creation', lazy_timer)
-print('compute times', times)
+# times = []
+# for level in range(levels, 0, -1):
+#     start = datetime.datetime.now()
+#     pyramid[level - 1].compute()
+#     timer = (datetime.datetime.now() - start).total_seconds()
+#     times.append(timer)
+#     print(f'Level {level - 1} compute timer', (datetime.datetime.now() - start).total_seconds())
+
+# print('shape', shape, 'tile_shape', tile_shape)
+# print('lazy_pyramid creation', lazy_timer)
+# print('compute times', times)
 
 # Example output
 # shape (10, 2, 5, 3000, 5000) tile_shape (256, 256)
