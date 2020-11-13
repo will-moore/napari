@@ -9,6 +9,7 @@ except ImportError:
     raise ImportError("""This example uses a dask array but dask is not
     installed. To install try 'pip install dask'.""")
 
+import datetime
 import numpy as np
 import napari
 from math import ceil
@@ -91,7 +92,27 @@ def get_pyramid_lazy(shape, tile_shape, levels):
 shape = (10, 2, 5, 3000, 5000)
 tile_shape = (256, 256)
 levels = 4
+start = datetime.datetime.now()
 pyramid = get_pyramid_lazy(shape, tile_shape, levels)
+lazy_timer = (datetime.datetime.now() - start).total_seconds()
+print('lazy pyramid timer', lazy_timer)
 
-with napari.gui_qt():
-    viewer = napari.view_image(pyramid, channel_axis=1)
+times = []
+for level in range(levels, 0, -1):
+    start = datetime.datetime.now()
+    pyramid[level - 1].compute()
+    timer = (datetime.datetime.now() - start).total_seconds()
+    times.append(timer)
+    print(f'Level {level - 1} compute timer', (datetime.datetime.now() - start).total_seconds())
+
+print('shape', shape, 'tile_shape', tile_shape)
+print('lazy_pyramid creation', lazy_timer)
+print('compute times', times)
+
+# Example output
+# shape (10, 2, 5, 3000, 5000) tile_shape (256, 256)
+# lazy_pyramid creation 8.401882
+# compute times [0.403972, 1.156574, 5.493262, 26.310839]
+
+# with napari.gui_qt():
+#     viewer = napari.view_image(pyramid, channel_axis=1)
